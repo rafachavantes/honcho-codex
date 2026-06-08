@@ -6,7 +6,7 @@ import os
 import sys
 from typing import Any
 
-from honcho_codex.cli import HonchoCli, HonchoCliError
+from honcho_codex.rest import HonchoClient, HonchoError
 from honcho_codex.config import load_config
 from honcho_codex.formatting import (
     event_key,
@@ -136,8 +136,8 @@ def main() -> int:
     session_name = config.session_name_for_cwd(cwd)
 
     try:
-        client = HonchoCli(config)
-    except HonchoCliError as exc:
+        client = HonchoClient(config)
+    except HonchoError as exc:
         log_event({"event": event_name, "status": "skipped", "reason": str(exc)})
         _empty_success(event_name)
         return 0
