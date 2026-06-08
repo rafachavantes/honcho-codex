@@ -135,6 +135,22 @@ def mark_ensured(kind: str, key: str, now: float | None = None) -> None:
     data = _load_ensured()
     data[f"{kind}:{key}"] = now
     _save_ensured(data)
+
+
+def clear_ensured(kind: str, key: str) -> None:
+    data = _load_ensured()
+    if data.pop(f"{kind}:{key}", None) is not None:
+        _save_ensured(data)
+```
+
+Also add a test for eviction in `tests/test_ensure_cache.py`:
+
+```python
+def test_clear_ensured_removes_key(monkeypatch, tmp_path):
+    _point(monkeypatch, tmp_path)
+    state.mark_ensured("session", "rafa:s1", now=1000.0)
+    state.clear_ensured("session", "rafa:s1")
+    assert state.is_ensured("session", "rafa:s1", now=1000.0) is False
 ```
 
 Note: `STATE_DIR` and `_ensure_dir` already exist in `state.py`. `ENSURED_PATH` is defined from `STATE_DIR`; the test monkeypatches both so the rebind is picked up by `_load_ensured`/`_save_ensured` which read the module global at call time.
@@ -476,6 +492,32 @@ def test_add_message_posts_to_messages_endpoint(monkeypatch, tmp_path):
     assert payload["messages"][0]["content"] == "- bullet content"
     assert payload["messages"][0]["peer_id"] == "assistant"
     assert payload["messages"][0]["metadata"] == {"source": "test"}
+
+
+def test_add_message_evicts_cache_and_retries_on_404(monkeypatch, tmp_path):
+    _point_state(monkeypatch, tmp_path)
+    # pre-mark the session as ensured so the first attempt skips re-create
+    state.mark_ensured("session", "test-ws:s1")
+    state.mark_ensured("workspace", "test-ws")
+    state.mark_ensured("peer", "test-ws:user")
+    state.mark_ensured("peer", "test-ws:codex")
+    seen = {"messages": 0}
+
+    def handler(method, url, headers, body):
+        if url.endswith("/messages"):
+            seen["messages"] += 1
+            if seen["messages"] == 1:
+                from urllib.error import HTTPError
+                raise HTTPError(url, 404, "Not Found", {}, io.BytesIO(b'{"error":"no session"}'))
+            return b"{}"
+        return b"{}"
+
+    calls = install_transport(monkeypatch, handler)
+    client = rest.HonchoClient(cfg())
+    client.add_message("s1", "codex", "- recovered", {})
+    assert seen["messages"] == 2  # 404 then success
+    # the session was re-created between the two message POSTs
+    assert any(c["url"].endswith("/sessions") for c in calls)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -496,11 +538,19 @@ Add to `HonchoClient`:
         metadata: dict[str, Any],
     ) -> None:
         self.ensure_session(session_name)
-        self._request(
-            "POST",
-            self._ws_path("sessions", session_name, "messages"),
-            {"messages": [{"content": content, "peer_id": peer_id, "metadata": metadata}]},
-        )
+        path = self._ws_path("sessions", session_name, "messages")
+        body = {"messages": [{"content": content, "peer_id": peer_id, "metadata": metadata}]}
+        try:
+            self._request("POST", path, body)
+        except HonchoError as exc:
+            if exc.status != 404:
+                raise
+            # Session/workspace was deleted server-side though still cached as ensured.
+            # Evict the stale ensure key, recreate, and retry once so the write self-heals
+            # instead of staying stuck in the queue for the full TTL.
+            state.clear_ensured("session", f"{self.config.workspace}:{session_name}")
+            self.ensure_session(session_name)
+            self._request("POST", path, body)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -700,7 +750,9 @@ Add to `HonchoClient` (uses the already-verified workspace endpoint as a connect
 
 ```python
     def doctor(self) -> dict[str, Any]:
-        self.ensure_workspace()
+        # Uncached connectivity probe — always hits the network (idempotent get-or-create).
+        self._request("POST", "/v3/workspaces", {"id": self.config.workspace})
+        state.mark_ensured("workspace", self.config.workspace)
         return {"ok": True, "workspace": self.config.workspace, "base_url": self._base}
 ```
 
