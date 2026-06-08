@@ -1,0 +1,38 @@
+{
+  "name": "honcho-codex",
+  "version": "0.1.0+codex.20260526172603",
+  "description": "Honcho memory integration for Codex lifecycle hooks",
+  "author": {
+    "name": "Honcho Codex Contributors",
+    "email": "hello@plasticlabs.ai",
+    "url": "https://github.com/plastic-labs"
+  },
+  "homepage": "https://honcho.dev",
+  "repository": "https://github.com/plastic-labs/honcho",
+  "license": "MIT",
+  "keywords": [
+    "honcho",
+    "memory",
+    "codex",
+    "hooks",
+    "cli"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Honcho Codex",
+    "shortDescription": "Persistent Honcho memory for Codex sessions.",
+    "longDescription": "Adds Honcho memory recall and message ingestion to Codex using lifecycle hooks. The MVP saves user and assistant messages only, not tool calls.",
+    "developerName": "Honcho Codex Contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Memory"
+    ],
+    "websiteURL": "https://honcho.dev/",
+    "defaultPrompt": [
+      "Set up Honcho memory for this project.",
+      "Show Honcho memory status.",
+      "Recall Honcho context for this repo."
+    ]
+  }
+}

@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import sys
+from typing import Any
+
+from honcho_codex.cli import HonchoCli, HonchoCliError
+from honcho_codex.config import load_config
+from honcho_codex.formatting import (
+    event_key,
+    format_memory_context,
+    meaningful_assistant_message,
+    truncate_message,
+)
+from honcho_codex.state import (
+    enqueue,
+    log_event,
+    mark_sent,
+    read_queue,
+    rewrite_queue,
+    was_sent,
+)
+
+
+def _json_out(payload: dict[str, Any]) -> None:
+    print(json.dumps(payload))
+
+
+def _empty_success(event_name: str) -> None:
+    if event_name in {"Stop", "PreCompact"}:
+        _json_out({"continue": True})
+
+
+def _load_payload() -> dict[str, Any]:
+    raw = sys.stdin.read()
+    if not raw.strip():
+        return {}
+    return json.loads(raw)
+
+
+def _metadata(payload: dict[str, Any], session_name: str) -> dict[str, Any]:
+    return {
+        "codex_session_id": payload.get("session_id"),
+        "turn_id": payload.get("turn_id"),
+        "hook_event_name": payload.get("hook_event_name"),
+        "session_affinity": session_name,
+        "source": "honcho-codex",
+    }
+
+
+def _flush_queue(client: HonchoCli, max_items: int = 10) -> None:
+    remaining = []
+    queue = read_queue()
+    for item in queue[:max_items]:
+        key = item["dedupe_key"]
+        if was_sent(key):
+            continue
+        try:
+            client.add_message(
+                item["session_name"],
+                item["peer_id"],
+                item["content"],
+                item.get("metadata", {}),
+            )
+            mark_sent(key)
+        except Exception:
+            remaining.append(item)
+    remaining.extend(queue[max_items:])
+    rewrite_queue(remaining)
+
+
+def _save_message(
+    client: HonchoCli,
+    payload: dict[str, Any],
+    session_name: str,
+    peer_id: str,
+    content: str,
+    suffix: str,
+) -> None:
+    key = event_key(payload, suffix)
+    if was_sent(key):
+        return
+    metadata = _metadata(payload, session_name)
+    try:
+        client.add_message(session_name, peer_id, content, metadata)
+        mark_sent(key)
+    except Exception:
+        enqueue(
+            {
+                "dedupe_key": key,
+                "session_name": session_name,
+                "peer_id": peer_id,
+                "content": content,
+                "metadata": metadata,
+            }
+        )
+
+
+def _inject_context(
+    event_name: str,
+    session_name: str,
+    context: str | None,
+    representation: str | None,
+) -> None:
+    additional_context = "[Honcho Memory]\n" + format_memory_context(
+        session_name,
+        context,
+        representation,
+    )
+    _json_out(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": event_name,
+                "additionalContext": additional_context,
+            }
+        }
+    )
+
+
+def main() -> int:
+    payload = _load_payload()
+    event_name = payload.get("hook_event_name") or ""
+    cwd = payload.get("cwd") or os.getcwd()
+    config = load_config()
+    session_name = config.session_name_for_cwd(cwd)
+
+    try:
+        client = HonchoCli(config)
+    except HonchoCliError as exc:
+        log_event({"event": event_name, "status": "skipped", "reason": str(exc)})
+        _empty_success(event_name)
+        return 0
+
+    try:
+        _flush_queue(client)
+
+        if event_name == "SessionStart":
+            context = client.session_context(session_name, config.context_tokens)
+            # Conclusions (representation) are intentionally NOT injected: the Honcho
+            # backend's limit_to_session is a no-op for the semantic/most-derived branches,
+            # so session-scoped conclusions leak cross-project. The session summary is
+            # correctly scoped, so we inject only that. See
+            # honcho-install/docs/honcho-upstream-issue-limit-to-session.md
+            _inject_context("SessionStart", session_name, context, None)
+            return 0
+
+        if event_name == "UserPromptSubmit":
+            prompt = (payload.get("prompt") or "").strip()
+            if prompt and config.save_user_messages:
+                content = truncate_message(prompt, config.max_message_chars)
+                _save_message(
+                    client,
+                    payload,
+                    session_name,
+                    config.user_peer,
+                    content,
+                    "user",
+                )
+            if not config.inject_user_prompt_context:
+                return 0
+            context = client.session_context(session_name, config.context_tokens)
+            # See note above: conclusions leak via the backend bug, so inject summary only.
+            _inject_context("UserPromptSubmit", session_name, context, None)
+            return 0
+
+        if event_name == "Stop":
+            message = (payload.get("last_assistant_message") or "").strip()
+            if (
+                message
+                and config.save_assistant_messages
+                and meaningful_assistant_message(message)
+            ):
+                content = truncate_message(message, config.max_message_chars)
+                _save_message(
+                    client,
+                    payload,
+                    session_name,
+                    config.assistant_peer,
+                    content,
+                    "assistant",
+                )
+            _json_out({"continue": True})
+            return 0
+
+        if event_name == "PreCompact":
+            _json_out({"continue": True})
+            return 0
+
+        _empty_success(event_name)
+        return 0
+    except Exception as exc:
+        log_event({"event": event_name, "status": "error", "error": str(exc)})
+        _empty_success(event_name)
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

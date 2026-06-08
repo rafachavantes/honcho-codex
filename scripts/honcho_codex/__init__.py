@@ -1,0 +1,1 @@
+"""Honcho Codex hook support."""

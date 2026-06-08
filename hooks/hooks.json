@@ -1,0 +1,55 @@
+{
+  "description": "Honcho memory hooks for Codex sessions",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/scripts/honcho_codex_hook.py\"",
+            "statusMessage": "Loading Honcho memory",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/scripts/honcho_codex_hook.py\"",
+            "statusMessage": "Saving prompt to Honcho",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/scripts/honcho_codex_hook.py\"",
+            "statusMessage": "Saving response to Honcho",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/scripts/honcho_codex_hook.py\"",
+            "statusMessage": "Flushing Honcho memory queue",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
