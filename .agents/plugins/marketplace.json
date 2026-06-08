@@ -8,7 +8,7 @@
       "name": "honcho-codex",
       "source": {
         "source": "local",
-        "path": "."
+        "path": "./plugins/honcho-codex"
       },
       "policy": {
         "installation": "AVAILABLE",
