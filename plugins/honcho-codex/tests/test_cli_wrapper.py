@@ -52,6 +52,43 @@ def test_message_create_uses_no_shell(monkeypatch):
     assert all(not kwargs.get("shell", False) for kwargs in run_kwargs)
 
 
+def test_message_create_hyphen_content_after_separator(monkeypatch):
+    calls = []
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/honcho")
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    HonchoCli(cfg()).add_message("user-demo", "user", "- Lemos o CSV", {"source": "test"})
+    create = next(c for c in calls if c[:3] == ["honcho", "message", "create"])
+    # content must be the last arg, immediately preceded by the `--` end-of-options separator,
+    # so Click/Typer never parses leading-hyphen content as an option
+    assert create[-2:] == ["--", "- Lemos o CSV"]
+    # the required options must still be parsed as options (before the separator)
+    assert "--workspace" in create[: create.index("--")]
+    assert "--peer" in create[: create.index("--")]
+
+
+def test_create_commands_pass_positional_after_separator(monkeypatch):
+    calls = []
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/honcho")
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    HonchoCli(cfg()).ensure_session("user-demo")
+    # workspace/peer/session create all take a positional name; it must come after `--`
+    for verb, name in (("workspace", "test-workspace"), ("peer", "user"), ("session", "user-demo")):
+        create = next(
+            c for c in calls if c[:2] == [verb, "create"] or c[:3] == ["honcho", verb, "create"]
+        )
+        assert create[-2:] == ["--", name], f"{verb} create did not end with separator+name: {create}"
+
+
 def test_ensure_session_is_cached(monkeypatch):
     calls = []
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/honcho")

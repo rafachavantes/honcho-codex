@@ -65,7 +65,14 @@ def _flush_queue(client: HonchoCli, max_items: int = 10) -> None:
                 item.get("metadata", {}),
             )
             mark_sent(key)
-        except Exception:
+        except Exception as exc:
+            log_event(
+                {
+                    "event": "flush_error",
+                    "dedupe_key": key,
+                    "error": str(exc),
+                }
+            )
             remaining.append(item)
     remaining.extend(queue[max_items:])
     rewrite_queue(remaining)

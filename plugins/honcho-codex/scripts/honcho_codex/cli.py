@@ -62,10 +62,11 @@ class HonchoCli:
             [
                 "workspace",
                 "create",
-                self.config.workspace,
                 "--metadata",
                 json.dumps({"source": "honcho-codex"}),
                 "--json",
+                "--",
+                self.config.workspace,
             ]
         )
         self._ensured_workspaces.add(self.config.workspace)
@@ -78,12 +79,13 @@ class HonchoCli:
             [
                 "peer",
                 "create",
-                peer_id,
                 "--workspace",
                 self.config.workspace,
                 "--metadata",
                 json.dumps({"source": "honcho-codex"}),
                 "--json",
+                "--",
+                peer_id,
             ]
         )
         self._ensured_peers.add(peer_key)
@@ -99,7 +101,6 @@ class HonchoCli:
             [
                 "session",
                 "create",
-                session_name,
                 "--workspace",
                 self.config.workspace,
                 "--peers",
@@ -107,6 +108,8 @@ class HonchoCli:
                 "--metadata",
                 json.dumps({"source": "honcho-codex"}),
                 "--json",
+                "--",
+                session_name,
             ]
         )
         self._ensured_sessions.add(session_key)
@@ -123,7 +126,6 @@ class HonchoCli:
             [
                 "message",
                 "create",
-                content,
                 "--workspace",
                 self.config.workspace,
                 "--session",
@@ -133,6 +135,11 @@ class HonchoCli:
                 "--metadata",
                 json.dumps(metadata),
                 "--json",
+                # `--` ends option parsing so content starting with `-` is not
+                # mis-parsed by the honcho CLI (Typer/Click) as an option.
+                # Content MUST stay last, right after the separator.
+                "--",
+                content,
             ]
         )
 
