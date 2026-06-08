@@ -155,6 +155,29 @@ class HonchoCli:
             return json.dumps(result, indent=2)
         return str(result) if result else None
 
+    def peer_card(self) -> list[str] | None:
+        """Global peer card (stable identity/preferences about the user).
+
+        Peer-level and global by design — safe to inject in any session, unlike
+        conclusions. Mirrors the Claude plugin's peerCard injection.
+        """
+        self.ensure_peer(self.config.user_peer)
+        result = self._run(
+            [
+                "peer",
+                "card",
+                self.config.user_peer,
+                "--workspace",
+                self.config.workspace,
+                "--json",
+            ]
+        )
+        if isinstance(result, dict):
+            card = result.get("card") or result.get("peer_card")
+            if isinstance(card, list):
+                return [str(item) for item in card]
+        return None
+
     def representation(self, session_name: str) -> str | None:
         self.ensure_session(session_name)
         result = self._run(

@@ -103,11 +103,13 @@ def _inject_context(
     session_name: str,
     context: str | None,
     representation: str | None,
+    card: list[str] | None = None,
 ) -> None:
     additional_context = "[Honcho Memory]\n" + format_memory_context(
         session_name,
         context,
         representation,
+        card,
     )
     _json_out(
         {
@@ -138,12 +140,13 @@ def main() -> int:
 
         if event_name == "SessionStart":
             context = client.session_context(session_name, config.context_tokens)
+            card = client.peer_card()
             # Conclusions (representation) are intentionally NOT injected: the Honcho
             # backend's limit_to_session is a no-op for the semantic/most-derived branches,
-            # so session-scoped conclusions leak cross-project. The session summary is
-            # correctly scoped, so we inject only that. See
-            # honcho-install/docs/honcho-upstream-issue-limit-to-session.md
-            _inject_context("SessionStart", session_name, context, None)
+            # so session-scoped conclusions leak cross-project. We inject the correctly-scoped
+            # session summary + the global peerCard (identity), matching the Claude plugin.
+            # See honcho-install/docs/honcho-upstream-issue-limit-to-session.md
+            _inject_context("SessionStart", session_name, context, None, card)
             return 0
 
         if event_name == "UserPromptSubmit":
@@ -161,8 +164,10 @@ def main() -> int:
             if not config.inject_user_prompt_context:
                 return 0
             context = client.session_context(session_name, config.context_tokens)
-            # See note above: conclusions leak via the backend bug, so inject summary only.
-            _inject_context("UserPromptSubmit", session_name, context, None)
+            card = client.peer_card()
+            # See note above: conclusions leak via the backend bug, so inject
+            # summary (scoped) + peerCard (global identity) only.
+            _inject_context("UserPromptSubmit", session_name, context, None, card)
             return 0
 
         if event_name == "Stop":

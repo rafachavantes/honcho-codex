@@ -34,8 +34,11 @@ def format_memory_context(
     session_name: str,
     context: str | None,
     representation: str | None,
+    card: list[str] | None = None,
 ) -> str:
     parts = [f"Honcho session: {session_name}"]
+    if card:
+        parts.append("Profile:\n" + "\n".join(card))
     if context:
         parts.append("Session context:\n" + context.strip())
     if representation:
