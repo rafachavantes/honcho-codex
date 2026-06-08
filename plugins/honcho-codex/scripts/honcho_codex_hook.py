@@ -50,7 +50,7 @@ def _metadata(payload: dict[str, Any], session_name: str) -> dict[str, Any]:
     }
 
 
-def _flush_queue(client: HonchoCli, max_items: int = 10) -> None:
+def _flush_queue(client: HonchoClient, max_items: int = 10) -> None:
     remaining = []
     queue = read_queue()
     for item in queue[:max_items]:
@@ -79,7 +79,7 @@ def _flush_queue(client: HonchoCli, max_items: int = 10) -> None:
 
 
 def _save_message(
-    client: HonchoCli,
+    client: HonchoClient,
     payload: dict[str, Any],
     session_name: str,
     peer_id: str,
