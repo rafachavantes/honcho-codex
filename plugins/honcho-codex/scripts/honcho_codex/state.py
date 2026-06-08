@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,8 @@ STATE_DIR = Path.home() / ".honcho" / "codex"
 STATE_PATH = STATE_DIR / "state.json"
 QUEUE_PATH = STATE_DIR / "queue.jsonl"
 LOG_PATH = STATE_DIR / "logs.jsonl"
+ENSURED_PATH = STATE_DIR / "ensured.json"
+ENSURED_TTL_SECONDS = 24 * 60 * 60
 
 
 def _ensure_dir() -> None:
@@ -82,3 +85,40 @@ def log_event(event: dict[str, Any]) -> None:
     _ensure_dir()
     with LOG_PATH.open("a") as f:
         f.write(json.dumps(event, sort_keys=True) + "\n")
+
+
+def _load_ensured() -> dict[str, float]:
+    _ensure_dir()
+    if not ENSURED_PATH.exists():
+        return {}
+    try:
+        data = json.loads(ENSURED_PATH.read_text())
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_ensured(data: dict[str, float]) -> None:
+    _ensure_dir()
+    tmp_path = ENSURED_PATH.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(data, sort_keys=True))
+    tmp_path.replace(ENSURED_PATH)
+
+
+def is_ensured(kind: str, key: str, now: float | None = None) -> bool:
+    now = time.time() if now is None else now
+    ts = _load_ensured().get(f"{kind}:{key}")
+    return ts is not None and (now - ts) < ENSURED_TTL_SECONDS
+
+
+def mark_ensured(kind: str, key: str, now: float | None = None) -> None:
+    now = time.time() if now is None else now
+    data = _load_ensured()
+    data[f"{kind}:{key}"] = now
+    _save_ensured(data)
+
+
+def clear_ensured(kind: str, key: str) -> None:
+    data = _load_ensured()
+    if data.pop(f"{kind}:{key}", None) is not None:
+        _save_ensured(data)
