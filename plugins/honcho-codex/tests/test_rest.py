@@ -217,6 +217,42 @@ def test_add_message_evicts_cache_and_retries_on_404(monkeypatch, tmp_path):
 
 # --- session_context --------------------------------------------------------
 
+def test_session_context_strips_metadata_keeps_summary_and_messages(monkeypatch, tmp_path):
+    _point_state(monkeypatch, tmp_path)
+    rich = {
+        "id": "s1",
+        "messages": [
+            {
+                "id": "m1", "content": "faz push agora", "peer_id": "rafa",
+                "session_id": "s1",
+                "metadata": {"turn_id": "x", "codex_session_id": "y", "session_affinity": "s1"},
+                "created_at": "2026-06-08T14:51:35Z", "workspace_id": "rafa", "token_count": 5,
+            },
+        ],
+        "summary": {"content": "RESUMO DO PROJETO", "message_id": "m1",
+                    "summary_type": "honcho_chat_summary_long", "token_count": 1101},
+        "peer_representation": None,
+        "peer_card": None,
+    }
+
+    def handler(method, url, headers, body):
+        if "/context" in url:
+            return json.dumps(rich).encode()
+        return b"{}"
+
+    install_transport(monkeypatch, handler)
+    client = rest.HonchoClient(cfg())
+    out = client.session_context("s1", 500)
+    # useful content kept
+    assert "RESUMO DO PROJETO" in out
+    assert "faz push agora" in out
+    assert "rafa" in out
+    # metadata noise removed
+    for noise in ("turn_id", "codex_session_id", "session_affinity", "workspace_id",
+                  "token_count", "summary_type", "message_id", "created_at", "session_id"):
+        assert noise not in out, f"metadata leaked: {noise}"
+
+
 def test_session_context_gets_summary_with_tokens(monkeypatch, tmp_path):
     _point_state(monkeypatch, tmp_path)
 

@@ -123,9 +123,23 @@ class HonchoClient:
         result = self._request(
             "GET", self._ws_path("sessions", session_name, "context") + f"?{query}"
         )
-        if isinstance(result, dict):
-            return json.dumps(result, indent=2)
-        return str(result) if result else None
+        if not isinstance(result, dict):
+            return str(result) if result else None
+        # Inject only the useful parts: the summary text + recent messages as
+        # {peer, content}. The raw API objects carry id/created_at/workspace_id/
+        # token_count and a metadata wrapper (turn_id, codex_session_id, …) that
+        # are noise for the agent and balloon the injected context (~30KB→~8KB).
+        summary = result.get("summary")
+        if isinstance(summary, dict):
+            summary = summary.get("content")
+        clean = {
+            "summary": summary,
+            "recent_messages": [
+                {"peer": m.get("peer_id"), "content": m.get("content")}
+                for m in (result.get("messages") or [])
+            ],
+        }
+        return json.dumps(clean, indent=2, ensure_ascii=False)
 
     def peer_card(self) -> list[str] | None:
         self.ensure_peer(self.config.user_peer)
