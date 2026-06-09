@@ -58,21 +58,21 @@ Settings resolve in this order: **environment variable > config file > default.*
 
 The config file is `~/.honcho/codex/config.json` (camelCase keys).
 
-| Config key | Environment variable | Default |
-|------------|----------------------|---------|
-| `apiKey` | `HONCHO_API_KEY` | — (required) |
-| `baseUrl` | `HONCHO_BASE_URL` | `https://api.honcho.dev` |
-| `workspace` | `HONCHO_WORKSPACE` | `default` |
-| `userPeer` | `HONCHO_USER_PEER` | `$USER` → else `user` |
-| `assistantPeer` | `HONCHO_ASSISTANT_PEER` | `codex` |
-| `sessionPeerPrefix` | `HONCHO_SESSION_PEER_PREFIX` | `true` |
-| `sessionStrategy` | `HONCHO_SESSION_STRATEGY` | `per-directory` |
-| `injectUserPromptContext` | `HONCHO_INJECT_USER_PROMPT_CONTEXT` | `false` |
-| `saveUserMessages` | `HONCHO_SAVE_USER_MESSAGES` | `true` |
-| `saveAssistantMessages` | `HONCHO_SAVE_ASSISTANT_MESSAGES` | `true` |
-| `saveToolCalls` | `HONCHO_SAVE_TOOL_CALLS` | `false` |
-| `maxMessageChars` | `HONCHO_MAX_MESSAGE_CHARS` | `12000` |
-| `contextTokens` | `HONCHO_CONTEXT_TOKENS` | `4000` |
+| Config key | Environment variable | Default | What it does |
+|------------|----------------------|---------|--------------|
+| `apiKey` | `HONCHO_API_KEY` | — (required) | Your Honcho API key. Without it the hooks skip silently (no memory). |
+| `baseUrl` | `HONCHO_BASE_URL` | `https://api.honcho.dev` | Honcho API base URL. Change only for self-hosted/staging. |
+| `workspace` | `HONCHO_WORKSPACE` | `default` | The Honcho workspace — one per person; holds all your peers and sessions. |
+| `userPeer` | `HONCHO_USER_PEER` | `$USER` → else `user` | Your identity (the "user" peer). Keep it stable so memory follows you across projects. |
+| `assistantPeer` | `HONCHO_ASSISTANT_PEER` | `codex` | The assistant's peer id. |
+| `sessionPeerPrefix` | `HONCHO_SESSION_PEER_PREFIX` | `true` | If `true`, session names are prefixed with the user peer (`<userPeer>-<dir>`); if `false`, just `<dir>`. |
+| `sessionStrategy` | `HONCHO_SESSION_STRATEGY` | `per-directory` | How sessions are derived. Only `per-directory` (one session per project folder) is implemented. |
+| `injectUserPromptContext` | `HONCHO_INJECT_USER_PROMPT_CONTEXT` | `false` | If `true`, injects memory on **every** prompt, not just at `SessionStart`. More context, more latency per turn. |
+| `saveUserMessages` | `HONCHO_SAVE_USER_MESSAGES` | `true` | Whether your prompts are saved to memory. |
+| `saveAssistantMessages` | `HONCHO_SAVE_ASSISTANT_MESSAGES` | `true` | Whether the assistant's responses are saved to memory. |
+| `saveToolCalls` | `HONCHO_SAVE_TOOL_CALLS` | `false` | Whether tool calls are saved (off in the MVP — kept for parity). |
+| `maxMessageChars` | `HONCHO_MAX_MESSAGE_CHARS` | `12000` | Messages longer than this are truncated before upload. |
+| `contextTokens` | `HONCHO_CONTEXT_TOKENS` | `4000` | Token budget for the memory/summary injected at session start. |
 
 Example `~/.honcho/codex/config.json`:
 
@@ -88,6 +88,21 @@ Example `~/.honcho/codex/config.json`:
 ```
 
 > **Note:** the Codex plugin reads `HONCHO_USER_PEER` for the user peer — **not** `HONCHO_PEER_NAME` (which belongs to the Claude Code plugin). To make the user peer explicit and avoid depending on the `$USER` fallback, set `userPeer` in the config file.
+
+### Verify your configuration
+
+To see the **resolved** settings the plugin will actually use (config file + environment variables + defaults merged), run:
+
+```bash
+cd plugins/honcho-codex
+HONCHO_API_KEY=$HONCHO_API_KEY PYTHONPATH=scripts python3 scripts/honcho_codex/config.py
+```
+
+It prints the effective `workspace`, `userPeer`, `assistantPeer`, `injectUserPromptContext`, etc., plus an `exampleSession` showing the session name for the current directory — a quick way to confirm a change took effect before relying on it. A typical change-and-verify loop:
+
+1. Edit `~/.honcho/codex/config.json` (or export a `HONCHO_*` variable).
+2. Re-run the command above and check the value changed.
+3. Restart Codex so the hooks pick up the new config.
 
 ### State files
 
