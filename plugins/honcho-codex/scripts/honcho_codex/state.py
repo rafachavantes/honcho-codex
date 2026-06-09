@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -100,7 +101,11 @@ def _load_ensured() -> dict[str, float]:
 
 def _save_ensured(data: dict[str, float]) -> None:
     _ensure_dir()
-    tmp_path = ENSURED_PATH.with_suffix(".json.tmp")
+    # Unique tmp name per process so parallel Codex events don't collide on the
+    # same tmp file (which could replace() a truncated/garbled file into place).
+    # Lost-update across processes is acceptable: a dropped key just causes a
+    # redundant get-or-create on the next event.
+    tmp_path = ENSURED_PATH.with_suffix(f".json.{os.getpid()}.tmp")
     tmp_path.write_text(json.dumps(data, sort_keys=True))
     tmp_path.replace(ENSURED_PATH)
 

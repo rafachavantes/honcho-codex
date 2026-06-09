@@ -10,6 +10,9 @@ from . import state
 from .config import HonchoCodexConfig
 
 
+_SOURCE_META = {"source": "honcho-codex"}
+
+
 class HonchoError(RuntimeError):
     def __init__(self, message: str, status: int | None = None):
         super().__init__(message)
@@ -62,7 +65,7 @@ class HonchoClient:
     def ensure_workspace(self) -> None:
         if state.is_ensured("workspace", self.config.workspace):
             return
-        self._request("POST", "/v3/workspaces", {"id": self.config.workspace})
+        self._request("POST", "/v3/workspaces", {"id": self.config.workspace, "metadata": _SOURCE_META})
         state.mark_ensured("workspace", self.config.workspace)
 
     def ensure_peer(self, peer_id: str) -> None:
@@ -70,7 +73,7 @@ class HonchoClient:
         if state.is_ensured("peer", key):
             return
         self.ensure_workspace()
-        self._request("POST", self._ws_path("peers"), {"id": peer_id})
+        self._request("POST", self._ws_path("peers"), {"id": peer_id, "metadata": _SOURCE_META})
         state.mark_ensured("peer", key)
 
     def ensure_session(self, session_name: str) -> None:
@@ -80,7 +83,7 @@ class HonchoClient:
         self.ensure_workspace()
         self.ensure_peer(self.config.user_peer)
         self.ensure_peer(self.config.assistant_peer)
-        self._request("POST", self._ws_path("sessions"), {"id": session_name})
+        self._request("POST", self._ws_path("sessions"), {"id": session_name, "metadata": _SOURCE_META})
         self._request(
             "POST",
             self._ws_path("sessions", session_name, "peers"),
@@ -135,6 +138,6 @@ class HonchoClient:
 
     def doctor(self) -> dict[str, Any]:
         # Uncached connectivity probe — always hits the network (idempotent get-or-create).
-        self._request("POST", "/v3/workspaces", {"id": self.config.workspace})
+        self._request("POST", "/v3/workspaces", {"id": self.config.workspace, "metadata": _SOURCE_META})
         state.mark_ensured("workspace", self.config.workspace)
         return {"ok": True, "workspace": self.config.workspace, "base_url": self._base}

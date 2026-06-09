@@ -126,7 +126,54 @@ def test_ensure_peer_adds_peer_with_id_body(monkeypatch, tmp_path):
     client = rest.HonchoClient(cfg())
     client.ensure_peer("user")
     peer_call = next(c for c in calls if c["url"].endswith("/peers"))
-    assert json.loads(peer_call["body"]) == {"id": "user"}
+    assert json.loads(peer_call["body"]) == {"id": "user", "metadata": {"source": "honcho-codex"}}
+
+
+def test_ensure_creates_include_source_metadata(monkeypatch, tmp_path):
+    _point_state(monkeypatch, tmp_path)
+    calls = install_transport(monkeypatch, lambda *a: b"{}")
+    client = rest.HonchoClient(cfg())
+    client.ensure_workspace()
+    ws_call = next(c for c in calls if c["url"].endswith("/workspaces"))
+    body = json.loads(ws_call["body"])
+    assert body["id"] == "test-ws"
+    assert body["metadata"] == {"source": "honcho-codex"}
+
+
+def test_request_maps_urlerror_to_honcho_error(monkeypatch):
+    from urllib.error import URLError
+
+    def boom(req, timeout=None):
+        raise URLError("connection refused")
+
+    monkeypatch.setattr(rest, "urlopen", boom)
+    client = rest.HonchoClient(cfg())
+    with pytest.raises(rest.HonchoError):
+        client._request("GET", "/v3/workspaces")
+
+
+def test_request_returns_none_on_empty_body(monkeypatch):
+    install_transport(monkeypatch, lambda *a: b"")
+    client = rest.HonchoClient(cfg())
+    assert client._request("POST", "/v3/workspaces", {"id": "x"}) is None
+
+
+def test_add_message_raises_if_404_persists_after_retry(monkeypatch, tmp_path):
+    _point_state(monkeypatch, tmp_path)
+    for k in ("session:test-ws:s1", "workspace:test-ws", "peer:test-ws:user", "peer:test-ws:codex"):
+        kind, key = k.split(":", 1)
+        state.mark_ensured(kind, key)
+
+    def handler(method, url, headers, body):
+        if url.endswith("/messages"):
+            from urllib.error import HTTPError
+            raise HTTPError(url, 404, "Not Found", {}, io.BytesIO(b"{}"))
+        return b"{}"
+
+    install_transport(monkeypatch, handler)
+    client = rest.HonchoClient(cfg())
+    with pytest.raises(rest.HonchoError):  # second 404 propagates — no infinite loop
+        client.add_message("s1", "codex", "x", {})
 
 
 # --- add_message ------------------------------------------------------------

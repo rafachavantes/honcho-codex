@@ -17,7 +17,9 @@ Honcho memory integration for Codex via lifecycle hooks.
 
 ## Setup
 
-Check that the required Honcho CLI is installed:
+The memory hooks talk to Honcho directly over HTTP (no CLI needed at runtime).
+The Honcho CLI is only used for diagnostics/setup below; if it's installed you
+can check connectivity with:
 
 ```bash
 command -v honcho
