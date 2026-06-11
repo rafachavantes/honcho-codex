@@ -8,6 +8,7 @@ from typing import Any
 
 from honcho_codex.rest import HonchoClient, HonchoError
 from honcho_codex.config import load_config
+from honcho_codex.policy import SLIM_POINTER, decide_injection
 from honcho_codex.formatting import (
     event_key,
     format_memory_context,
@@ -146,6 +147,25 @@ def main() -> int:
         _flush_queue(client)
 
         if event_name == "SessionStart":
+            mode = decide_injection(payload.get("source"), config.inject_on_compact)
+            if mode != "full":
+                # Post-compact start: the host's own compaction summary carries
+                # recent context, so skip the session_context/peer_card REST
+                # calls. The queue flush above already ran. slim -> one-line
+                # pointer; off -> no output at all.
+                if mode == "slim":
+                    _json_out(
+                        {
+                            "hookSpecificOutput": {
+                                "hookEventName": "SessionStart",
+                                "additionalContext": "[Honcho Memory]\n" + SLIM_POINTER,
+                            }
+                        }
+                    )
+                log_event(
+                    {"event": "SessionStart", "status": "post_compact", "mode": mode}
+                )
+                return 0
             context = client.session_context(session_name, config.context_tokens)
             card = client.peer_card()
             # Conclusions (representation) are intentionally NOT injected: the Honcho
