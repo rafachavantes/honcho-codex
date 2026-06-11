@@ -17,6 +17,17 @@ def _bool_env(name: str, default: bool) -> bool:
     return value.lower() not in {"0", "false", "no", "off"}
 
 
+_INJECT_ON_COMPACT_VALUES = {"full", "slim", "off"}
+
+
+def _inject_on_compact(file_cfg: dict) -> str:
+    value = os.environ.get("HONCHO_INJECT_ON_COMPACT") or str(
+        file_cfg.get("injectOnCompact", "slim")
+    )
+    value = value.lower()
+    return value if value in _INJECT_ON_COMPACT_VALUES else "slim"
+
+
 def _sanitize(value: str) -> str:
     cleaned = re.sub(r"[^a-z0-9_-]+", "-", value.lower()).strip("-")
     return cleaned or "session"
@@ -44,6 +55,7 @@ class HonchoCodexConfig:
     save_assistant_messages: bool
     save_tool_calls: bool
     inject_user_prompt_context: bool
+    inject_on_compact: str
     max_message_chars: int
     context_tokens: int
 
@@ -98,6 +110,7 @@ def load_config() -> HonchoCodexConfig:
             "HONCHO_INJECT_USER_PROMPT_CONTEXT",
             bool(file_cfg.get("injectUserPromptContext", False)),
         ),
+        inject_on_compact=_inject_on_compact(file_cfg),
         max_message_chars=int(
             os.environ.get("HONCHO_MAX_MESSAGE_CHARS")
             or file_cfg.get("maxMessageChars")
@@ -125,6 +138,7 @@ if __name__ == "__main__":
                 "sessionPeerPrefix": cfg.session_peer_prefix,
                 "saveToolCalls": cfg.save_tool_calls,
                 "injectUserPromptContext": cfg.inject_user_prompt_context,
+                "injectOnCompact": cfg.inject_on_compact,
                 "exampleSession": cfg.session_name_for_cwd(os.getcwd()),
             },
             indent=2,
