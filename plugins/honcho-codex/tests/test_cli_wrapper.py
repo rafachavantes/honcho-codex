@@ -18,6 +18,7 @@ def cfg():
         save_assistant_messages=True,
         save_tool_calls=False,
         inject_user_prompt_context=False,
+        inject_on_compact="slim",
         max_message_chars=12000,
         context_tokens=4000,
     )

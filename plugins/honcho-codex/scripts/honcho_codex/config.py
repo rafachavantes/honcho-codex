@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -17,9 +19,54 @@ def _bool_env(name: str, default: bool) -> bool:
     return value.lower() not in {"0", "false", "no", "off"}
 
 
+_INJECT_ON_COMPACT_VALUES = {"full", "slim", "off"}
+
+
+def _inject_on_compact(file_cfg: dict) -> str:
+    value = os.environ.get("HONCHO_INJECT_ON_COMPACT") or str(
+        file_cfg.get("injectOnCompact", "slim")
+    )
+    value = value.lower()
+    return value if value in _INJECT_ON_COMPACT_VALUES else "slim"
+
+
 def _sanitize(value: str) -> str:
     cleaned = re.sub(r"[^a-z0-9_-]+", "-", value.lower()).strip("-")
     return cleaned or "session"
+
+
+def _git(cwd: str, *args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+@lru_cache(maxsize=32)
+def _git_repo_root(cwd: str) -> str | None:
+    """Main worktree root for any path inside a repo, else None.
+
+    Subdirectories and linked worktrees (per-branch checkouts) all resolve to
+    the same root, so one repo maps to one Honcho session. The common dir is
+    the main worktree's .git even for linked worktrees; its parent is the
+    canonical root.
+    """
+    toplevel = _git(cwd, "rev-parse", "--show-toplevel")
+    if not toplevel:
+        return None
+    common_dir = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common_dir and Path(common_dir).name == ".git":
+        return str(Path(common_dir).parent)
+    return toplevel
 
 
 def _read_file_config() -> dict:
@@ -44,13 +91,16 @@ class HonchoCodexConfig:
     save_assistant_messages: bool
     save_tool_calls: bool
     inject_user_prompt_context: bool
+    inject_on_compact: str
     max_message_chars: int
     context_tokens: int
 
     def session_name_for_cwd(self, cwd: str) -> str:
-        repo = _sanitize(Path(cwd).name or "workspace")
-        if self.session_strategy != "per-directory":
-            repo = _sanitize(Path(cwd).name or "workspace")
+        # Session identity follows the repo, not the raw cwd: any
+        # subdirectory or linked worktree resolves to the main repo root,
+        # so one repo maps to one session. Non-git dirs keep the cwd.
+        root = _git_repo_root(cwd) or cwd
+        repo = _sanitize(Path(root).name or "workspace")
         if self.session_peer_prefix:
             return f"{_sanitize(self.user_peer)}-{repo}"
         return repo
@@ -98,6 +148,7 @@ def load_config() -> HonchoCodexConfig:
             "HONCHO_INJECT_USER_PROMPT_CONTEXT",
             bool(file_cfg.get("injectUserPromptContext", False)),
         ),
+        inject_on_compact=_inject_on_compact(file_cfg),
         max_message_chars=int(
             os.environ.get("HONCHO_MAX_MESSAGE_CHARS")
             or file_cfg.get("maxMessageChars")
@@ -125,6 +176,7 @@ if __name__ == "__main__":
                 "sessionPeerPrefix": cfg.session_peer_prefix,
                 "saveToolCalls": cfg.save_tool_calls,
                 "injectUserPromptContext": cfg.inject_user_prompt_context,
+                "injectOnCompact": cfg.inject_on_compact,
                 "exampleSession": cfg.session_name_for_cwd(os.getcwd()),
             },
             indent=2,

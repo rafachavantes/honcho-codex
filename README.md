@@ -68,6 +68,7 @@ The config file is `~/.honcho/codex/config.json` (camelCase keys).
 | `sessionPeerPrefix` | `HONCHO_SESSION_PEER_PREFIX` | `true` | If `true`, session names are prefixed with the user peer (`<userPeer>-<dir>`); if `false`, just `<dir>`. |
 | `sessionStrategy` | `HONCHO_SESSION_STRATEGY` | `per-directory` | How sessions are derived. Only `per-directory` (one session per project folder) is implemented. |
 | `injectUserPromptContext` | `HONCHO_INJECT_USER_PROMPT_CONTEXT` | `false` | If `true`, injects memory on **every** prompt, not just at `SessionStart`. More context, more latency per turn. |
+| `injectOnCompact` | `HONCHO_INJECT_ON_COMPACT` | `slim` | Injection after the CLI compacts context: `slim` injects a one-line pointer, `off` injects nothing, `full` re-injects the whole memory package (legacy behavior; can re-trigger compaction). |
 | `saveUserMessages` | `HONCHO_SAVE_USER_MESSAGES` | `true` | Whether your prompts are saved to memory. |
 | `saveAssistantMessages` | `HONCHO_SAVE_ASSISTANT_MESSAGES` | `true` | Whether the assistant's responses are saved to memory. |
 | `saveToolCalls` | `HONCHO_SAVE_TOOL_CALLS` | `false` | Whether tool calls are saved (off in the MVP — kept for parity). |
@@ -83,6 +84,7 @@ Example `~/.honcho/codex/config.json`:
   "assistantPeer": "assistant",
   "sessionPeerPrefix": true,
   "injectUserPromptContext": false,
+  "injectOnCompact": "slim",
   "contextTokens": 4000
 }
 ```

@@ -48,6 +48,16 @@ To opt back into prompt-time context injection, set:
 }
 ```
 
+To control memory injection after the CLI compacts context (default `slim` — a one-line pointer so the compaction summary isn't refilled):
+
+```json
+{
+  "injectOnCompact": "slim"
+}
+```
+
+Valid values: `full` (re-inject everything), `slim`, `off`.
+
 ## Status
 
 Run:
