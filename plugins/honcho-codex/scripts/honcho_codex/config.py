@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -33,6 +35,40 @@ def _sanitize(value: str) -> str:
     return cleaned or "session"
 
 
+def _git(cwd: str, *args: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+@lru_cache(maxsize=32)
+def _git_repo_root(cwd: str) -> str | None:
+    """Main worktree root for any path inside a repo, else None.
+
+    Subdirectories and linked worktrees (per-branch checkouts) all resolve to
+    the same root, so one repo maps to one Honcho session. The common dir is
+    the main worktree's .git even for linked worktrees; its parent is the
+    canonical root.
+    """
+    toplevel = _git(cwd, "rev-parse", "--show-toplevel")
+    if not toplevel:
+        return None
+    common_dir = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common_dir and Path(common_dir).name == ".git":
+        return str(Path(common_dir).parent)
+    return toplevel
+
+
 def _read_file_config() -> dict:
     if not CONFIG_PATH.exists():
         return {}
@@ -60,9 +96,11 @@ class HonchoCodexConfig:
     context_tokens: int
 
     def session_name_for_cwd(self, cwd: str) -> str:
-        repo = _sanitize(Path(cwd).name or "workspace")
-        if self.session_strategy != "per-directory":
-            repo = _sanitize(Path(cwd).name or "workspace")
+        # Session identity follows the repo, not the raw cwd: any
+        # subdirectory or linked worktree resolves to the main repo root,
+        # so one repo maps to one session. Non-git dirs keep the cwd.
+        root = _git_repo_root(cwd) or cwd
+        repo = _sanitize(Path(root).name or "workspace")
         if self.session_peer_prefix:
             return f"{_sanitize(self.user_peer)}-{repo}"
         return repo
