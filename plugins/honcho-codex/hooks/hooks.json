@@ -1,5 +1,4 @@
 {
-  "description": "Honcho memory hooks for Codex sessions",
   "hooks": {
     "SessionStart": [
       {

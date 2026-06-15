@@ -54,10 +54,10 @@ def test_inject_on_compact_invalid_value_falls_back_to_slim(monkeypatch, tmp_pat
 
 
 def test_inject_on_compact_file_key(monkeypatch, tmp_path):
-    # CONFIG_PATH is resolved at import time, so patch the constant directly
-    cfg_file = tmp_path / "config.json"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cfg_file = tmp_path / ".honcho" / "codex" / "config.json"
+    cfg_file.parent.mkdir(parents=True)
     cfg_file.write_text(json.dumps({"injectOnCompact": "full"}))
-    monkeypatch.setattr("honcho_codex.config.CONFIG_PATH", cfg_file)
     monkeypatch.delenv("HONCHO_INJECT_ON_COMPACT", raising=False)
     cfg = load_config()
     assert cfg.inject_on_compact == "full"

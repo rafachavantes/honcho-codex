@@ -15,6 +15,31 @@ Honcho memory integration for Codex via lifecycle hooks.
 - `PreCompact` flushes queued writes.
 - Tool calls are not saved in the MVP.
 
+## Operating Rules
+
+- This plugin is REST-only. It talks to Honcho through the bundled Python client, not through MCP.
+- Do not use `mcp__honcho` for this plugin, even if an unrelated Honcho MCP server is available in the Codex session.
+- Do not guess `peer_id`, `assistantPeer`, workspace, or session names.
+- Before debugging or doing any explicit Honcho lookup, read the resolved plugin config:
+
+```bash
+PROJECT_CWD="$PWD"
+cd "$PLUGIN_ROOT/scripts"
+python3 -m honcho_codex.config --cwd "$PROJECT_CWD"
+```
+
+Use the reported `userPeer`, `assistantPeer`, `workspace`, and `exampleSession` as the source of truth.
+
+For a REST-based status/context lookup, run:
+
+```bash
+PROJECT_CWD="$PWD"
+cd "$PLUGIN_ROOT/scripts"
+python3 -m honcho_codex.status --cwd "$PROJECT_CWD"
+```
+
+This prints the resolved config, current session name, session context, and peer card using the same REST path as the hooks.
+
 ## Setup
 
 The memory hooks talk to Honcho directly over HTTP (no CLI needed at runtime).
@@ -63,8 +88,9 @@ Valid values: `full` (re-inject everything), `slim`, `off`.
 Run:
 
 ```bash
+PROJECT_CWD="$PWD"
 cd "$PLUGIN_ROOT/scripts"
-python3 -m honcho_codex.config
+python3 -m honcho_codex.config --cwd "$PROJECT_CWD"
 ```
 
 Then ask the user to open `/hooks` in Codex if hooks have not been reviewed and trusted.

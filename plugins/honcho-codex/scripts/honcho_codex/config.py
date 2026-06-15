@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import Sequence
 
 
-CONFIG_PATH = Path.home() / ".honcho" / "codex" / "config.json"
+def _codex_config_path() -> Path:
+    return Path.home() / ".honcho" / "codex" / "config.json"
+
+
+def _unified_config_path() -> Path:
+    return Path.home() / ".honcho" / "config.json"
 
 
 def _bool_env(name: str, default: bool) -> bool:
@@ -22,9 +29,21 @@ def _bool_env(name: str, default: bool) -> bool:
 _INJECT_ON_COMPACT_VALUES = {"full", "slim", "off"}
 
 
-def _inject_on_compact(file_cfg: dict) -> str:
+def _first_value(*values):
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _inject_on_compact(file_cfg: dict, host_cfg: dict, global_cfg: dict) -> str:
     value = os.environ.get("HONCHO_INJECT_ON_COMPACT") or str(
-        file_cfg.get("injectOnCompact", "slim")
+        _first_value(
+            file_cfg.get("injectOnCompact"),
+            host_cfg.get("injectOnCompact"),
+            global_cfg.get("injectOnCompact"),
+            "slim",
+        )
     )
     value = value.lower()
     return value if value in _INJECT_ON_COMPACT_VALUES else "slim"
@@ -69,13 +88,50 @@ def _git_repo_root(cwd: str) -> str | None:
     return toplevel
 
 
-def _read_file_config() -> dict:
-    if not CONFIG_PATH.exists():
+def _read_json_config(path: Path) -> dict:
+    if not path.exists():
         return {}
     try:
-        return json.loads(CONFIG_PATH.read_text())
+        data = json.loads(path.read_text())
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
+
+
+def _read_file_config() -> dict:
+    return _read_json_config(_codex_config_path())
+
+
+def _read_unified_config() -> dict:
+    return _read_json_config(_unified_config_path())
+
+
+def _host_config(global_cfg: dict) -> dict:
+    hosts = global_cfg.get("hosts")
+    if not isinstance(hosts, dict):
+        return {}
+    host = hosts.get("codex")
+    return host if isinstance(host, dict) else {}
+
+
+def _cfg_value(file_cfg: dict, host_cfg: dict, global_cfg: dict, *keys: str):
+    for source in (file_cfg, host_cfg, global_cfg):
+        for key in keys:
+            if key in source and source[key] is not None:
+                return source[key]
+    return None
+
+
+def _configured_bool(
+    env_name: str,
+    default: bool,
+    file_cfg: dict,
+    host_cfg: dict,
+    global_cfg: dict,
+    key: str,
+) -> bool:
+    configured = _cfg_value(file_cfg, host_cfg, global_cfg, key)
+    return _bool_env(env_name, bool(configured) if configured is not None else default)
 
 
 @dataclass(frozen=True)
@@ -94,12 +150,17 @@ class HonchoCodexConfig:
     inject_on_compact: str
     max_message_chars: int
     context_tokens: int
+    session_overrides: dict[str, str] = field(default_factory=dict)
 
     def session_name_for_cwd(self, cwd: str) -> str:
         # Session identity follows the repo, not the raw cwd: any
         # subdirectory or linked worktree resolves to the main repo root,
         # so one repo maps to one session. Non-git dirs keep the cwd.
         root = _git_repo_root(cwd) or cwd
+        for candidate in (cwd, root):
+            override = self.session_overrides.get(str(Path(candidate)))
+            if override:
+                return override
         repo = _sanitize(Path(root).name or "workspace")
         if self.session_peer_prefix:
             return f"{_sanitize(self.user_peer)}-{repo}"
@@ -108,61 +169,96 @@ class HonchoCodexConfig:
 
 def load_config() -> HonchoCodexConfig:
     file_cfg = _read_file_config()
+    global_cfg = _read_unified_config()
+    host_cfg = _host_config(global_cfg)
     default_user = os.environ.get("USER") or os.environ.get("USERNAME") or "user"
+    session_overrides = global_cfg.get("sessions")
+    if not isinstance(session_overrides, dict):
+        session_overrides = {}
+    session_peer_prefix = _configured_bool(
+        "HONCHO_SESSION_PEER_PREFIX",
+        True,
+        file_cfg,
+        host_cfg,
+        global_cfg,
+        "sessionPeerPrefix",
+    )
+    save_user_messages = _configured_bool(
+        "HONCHO_SAVE_USER_MESSAGES",
+        True,
+        file_cfg,
+        host_cfg,
+        global_cfg,
+        "saveUserMessages",
+    )
+    save_assistant_messages = _configured_bool(
+        "HONCHO_SAVE_ASSISTANT_MESSAGES",
+        True,
+        file_cfg,
+        host_cfg,
+        global_cfg,
+        "saveAssistantMessages",
+    )
+    save_tool_calls = _configured_bool(
+        "HONCHO_SAVE_TOOL_CALLS",
+        False,
+        file_cfg,
+        host_cfg,
+        global_cfg,
+        "saveToolCalls",
+    )
+    inject_user_prompt_context = _configured_bool(
+        "HONCHO_INJECT_USER_PROMPT_CONTEXT",
+        False,
+        file_cfg,
+        host_cfg,
+        global_cfg,
+        "injectUserPromptContext",
+    )
 
     return HonchoCodexConfig(
-        api_key=os.environ.get("HONCHO_API_KEY") or file_cfg.get("apiKey"),
+        api_key=os.environ.get("HONCHO_API_KEY")
+        or _cfg_value(file_cfg, host_cfg, global_cfg, "apiKey"),
         base_url=os.environ.get("HONCHO_BASE_URL")
-        or file_cfg.get("baseUrl")
+        or _cfg_value(file_cfg, host_cfg, global_cfg, "baseUrl")
         or "https://api.honcho.dev",
         workspace=os.environ.get("HONCHO_WORKSPACE")
         or os.environ.get("HONCHO_WORKSPACE_ID")
-        or file_cfg.get("workspace")
+        or _cfg_value(file_cfg, host_cfg, global_cfg, "workspace")
         or "default",
         user_peer=os.environ.get("HONCHO_USER_PEER")
-        or file_cfg.get("userPeer")
+        or _cfg_value(file_cfg, host_cfg, global_cfg, "userPeer", "peerName")
         or default_user,
         assistant_peer=os.environ.get("HONCHO_ASSISTANT_PEER")
-        or file_cfg.get("assistantPeer")
+        or _cfg_value(file_cfg, host_cfg, global_cfg, "assistantPeer", "aiPeer")
         or "codex",
         session_strategy=os.environ.get("HONCHO_SESSION_STRATEGY")
-        or file_cfg.get("sessionStrategy")
+        or _cfg_value(file_cfg, host_cfg, global_cfg, "sessionStrategy")
         or "per-directory",
-        session_peer_prefix=_bool_env(
-            "HONCHO_SESSION_PEER_PREFIX",
-            bool(file_cfg.get("sessionPeerPrefix", True)),
-        ),
-        save_user_messages=_bool_env(
-            "HONCHO_SAVE_USER_MESSAGES",
-            bool(file_cfg.get("saveUserMessages", True)),
-        ),
-        save_assistant_messages=_bool_env(
-            "HONCHO_SAVE_ASSISTANT_MESSAGES",
-            bool(file_cfg.get("saveAssistantMessages", True)),
-        ),
-        save_tool_calls=_bool_env(
-            "HONCHO_SAVE_TOOL_CALLS",
-            bool(file_cfg.get("saveToolCalls", False)),
-        ),
-        inject_user_prompt_context=_bool_env(
-            "HONCHO_INJECT_USER_PROMPT_CONTEXT",
-            bool(file_cfg.get("injectUserPromptContext", False)),
-        ),
-        inject_on_compact=_inject_on_compact(file_cfg),
+        session_peer_prefix=session_peer_prefix,
+        save_user_messages=save_user_messages,
+        save_assistant_messages=save_assistant_messages,
+        save_tool_calls=save_tool_calls,
+        inject_user_prompt_context=inject_user_prompt_context,
+        inject_on_compact=_inject_on_compact(file_cfg, host_cfg, global_cfg),
         max_message_chars=int(
             os.environ.get("HONCHO_MAX_MESSAGE_CHARS")
-            or file_cfg.get("maxMessageChars")
+            or _cfg_value(file_cfg, host_cfg, global_cfg, "maxMessageChars")
             or 12000
         ),
         context_tokens=int(
             os.environ.get("HONCHO_CONTEXT_TOKENS")
-            or file_cfg.get("contextTokens")
+            or _cfg_value(file_cfg, host_cfg, global_cfg, "contextTokens")
             or 4000
         ),
+        session_overrides={str(Path(k)): str(v) for k, v in session_overrides.items()},
     )
 
 
-if __name__ == "__main__":
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Show resolved Honcho Codex config.")
+    parser.add_argument("--cwd", default=os.getcwd(), help="Directory used to resolve session name.")
+    args = parser.parse_args(argv)
     cfg = load_config()
     print(
         json.dumps(
@@ -177,8 +273,12 @@ if __name__ == "__main__":
                 "saveToolCalls": cfg.save_tool_calls,
                 "injectUserPromptContext": cfg.inject_user_prompt_context,
                 "injectOnCompact": cfg.inject_on_compact,
-                "exampleSession": cfg.session_name_for_cwd(os.getcwd()),
+                "exampleSession": cfg.session_name_for_cwd(args.cwd),
             },
             indent=2,
         )
     )
+
+
+if __name__ == "__main__":
+    main()
