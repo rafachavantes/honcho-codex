@@ -6,7 +6,7 @@ This is the Codex counterpart to the Claude Code plugin (`claude-honcho`); both 
 
 ## How it works
 
-The plugin registers four Codex lifecycle hooks (`hooks/hooks.json`), each running `scripts/honcho_codex_hook.py`:
+The plugin registers five Codex lifecycle hooks (`hooks/hooks.json`), each running `scripts/honcho_codex_hook.py`:
 
 | Hook | What it does |
 |------|--------------|
@@ -14,6 +14,7 @@ The plugin registers four Codex lifecycle hooks (`hooks/hooks.json`), each runni
 | `UserPromptSubmit` | Saves your prompt to Honcho. Optionally injects context (off by default). |
 | `Stop` | Saves the assistant's final response for the turn. |
 | `PreCompact` | Flushes the queued-writes buffer. |
+| `PostCompact` | Flushes the queued-writes buffer after compaction completes, without re-injecting memory. |
 
 Tool calls are intentionally **not** saved (MVP scope).
 

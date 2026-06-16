@@ -12,7 +12,8 @@ Honcho memory integration for Codex via lifecycle hooks.
 - `SessionStart` loads Honcho recall and injects it as Codex context.
 - `UserPromptSubmit` saves the user prompt. It does not inject recall by default, keeping hook context out of the UI.
 - `Stop` saves the assistant's final response for the turn.
-- `PreCompact` flushes queued writes.
+- `PreCompact` flushes queued writes before compaction.
+- `PostCompact` flushes queued writes after compaction without injecting memory.
 - Tool calls are not saved in the MVP.
 
 ## Operating Rules

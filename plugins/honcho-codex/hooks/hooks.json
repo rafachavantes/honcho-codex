@@ -49,6 +49,19 @@
           }
         ]
       }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/scripts/honcho_codex_hook.py\"",
+            "statusMessage": "Flushing Honcho memory queue",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

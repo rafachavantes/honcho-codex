@@ -146,3 +146,20 @@ def test_startup_source_unaffected_by_slim_mode(monkeypatch, capsys):
 def test_missing_source_treated_as_full(monkeypatch, capsys):
     client, _, _ = _run_session_start(monkeypatch, capsys, None, "slim")
     assert "session_context" in client.calls
+
+
+def test_post_compact_flushes_queue_without_memory_injection(monkeypatch, capsys):
+    client = RecordingClient()
+    flushes = []
+    monkeypatch.setattr(hook, "load_config", lambda: _config())
+    monkeypatch.setattr(hook, "HonchoClient", lambda cfg: client)
+    monkeypatch.setattr(hook, "_flush_queue", lambda c: flushes.append(True))
+    payload = {"hook_event_name": "PostCompact", "cwd": "/tmp/x", "trigger": "manual"}
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+
+    rc = hook.main()
+
+    assert rc == 0
+    assert flushes == [True]
+    assert client.calls == []
+    assert json.loads(capsys.readouterr().out) == {"continue": True}
