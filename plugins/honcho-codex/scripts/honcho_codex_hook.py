@@ -30,7 +30,7 @@ def _json_out(payload: dict[str, Any]) -> None:
 
 
 def _empty_success(event_name: str) -> None:
-    if event_name in {"Stop", "PreCompact"}:
+    if event_name in {"Stop", "PreCompact", "PostCompact"}:
         _json_out({"continue": True})
 
 
@@ -216,7 +216,7 @@ def main() -> int:
             _json_out({"continue": True})
             return 0
 
-        if event_name == "PreCompact":
+        if event_name in {"PreCompact", "PostCompact"}:
             _json_out({"continue": True})
             return 0
 
